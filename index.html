@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ledger Reconciliation – Pending Finder</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#1b1f24;--mu:#667085;--bd:#e3e6ea;--ac:#0b6e4f;--bad:#c2410c;--ok:#15803d;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111418;--card:#1b2026;--tx:#e8eaed;--mu:#9aa3ad;--bd:#2c333b;--ac:#34d399;--bad:#fb923c;--ok:#4ade80}}
+:root[data-theme="dark"]{--bg:#111418;--card:#1b2026;--tx:#e8eaed;--mu:#9aa3ad;--bd:#2c333b;--ac:#34d399;--bad:#fb923c;--ok:#4ade80}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:980px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:22px;margin:0 0 4px}p.s{color:var(--mu);margin:0 0 16px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:16px}
+#drop{border:2px dashed var(--bd);border-radius:12px;padding:28px;text-align:center;cursor:pointer;color:var(--mu)}
+#drop.on{border-color:var(--ac);color:var(--ac)}
+button,select{font:inherit;padding:8px 14px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--tx);cursor:pointer}
+button.p{background:var(--ac);color:#fff;border-color:var(--ac)}
+textarea{width:100%;height:80px;box-sizing:border-box;background:var(--bg);color:var(--tx);border:1px solid var(--bd);border-radius:8px;padding:8px;font:12px monospace}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.k{background:var(--bg);border-radius:10px;padding:12px}.k b{display:block;font-size:20px}.k span{color:var(--mu);font-size:12px}
+.sc{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:640px}
+th,td{padding:8px 10px;border-bottom:1px solid var(--bd);text-align:left;white-space:nowrap}th{color:var(--mu);font-size:12px;text-transform:uppercase}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+.t{padding:2px 8px;border-radius:99px;font-size:12px;border:1px solid currentColor}
+.Paid{color:var(--ok)}.Pending{color:var(--bad)}.Partly{color:#b45309}
+#msg{color:var(--bad)}
+</style></head><body><main>
+<div id="lg" class="card" style="max-width:360px;margin:60px auto"><h1>Login</h1><p class="s">Ledger Reconciliation</p>
+<div class="row" style="flex-direction:column;align-items:stretch"><input id="u" placeholder="Login ID" autocomplete="username" style="font:inherit;padding:8px;border-radius:8px;border:1px solid var(--bd);background:var(--bg);color:var(--tx)"><input id="pw" type="password" placeholder="Password" autocomplete="current-password" style="font:inherit;padding:8px;border-radius:8px;border:1px solid var(--bd);background:var(--bg);color:var(--tx)"><button class="p" id="li">Login</button><span id="le" style="color:var(--bad)"></span></div></div>
+<div id="app" hidden>
+<h1>Ledger Reconciliation</h1>
+<p class="s">Upload a Tally-style ledger (Excel / CSV) or paste it. Payments are matched against bills oldest-first and the pending bills are shown.</p>
+<div class="card">
+<div id="drop">Click or drop ledger file here (.xlsx, .xls, .csv)</div>
+<input type="file" id="f" accept=".xlsx,.xls,.csv" hidden>
+<div class="row"><textarea id="ta" placeholder="…or paste ledger rows copied from Excel here"></textarea></div>
+<div class="row">
+<button class="p" id="go">Reconcile pasted text</button><button id="sm">Load sample</button>
+<label>Bills are in <select id="dir"><option value="auto">Auto-detect</option><option value="cr">Credit column (payable)</option><option value="dr">Debit column (receivable)</option></select></label>
+<span id="msg"></span></div></div>
+<div id="out"></div>
+<script>
+const HASH="936bae4c6a4054266a34e0d1daf019f7f8171b1276d9bc4dc400a0596d3de5de";
+async function hx(t){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+function show(){document.getElementById('lg').hidden=true;document.getElementById('app').hidden=false}
+async function tryLogin(){const e=document.getElementById('le');try{const h=await hx(document.getElementById('u').value.trim().toLowerCase()+'|'+document.getElementById('pw').value);
+ if(h===HASH){try{sessionStorage.setItem('ok','1')}catch(x){}show()}else e.textContent='Wrong login ID or password.'}catch(x){e.textContent='Login unavailable.'}}
+document.getElementById('li').onclick=tryLogin;document.getElementById('pw').onkeydown=e=>{if(e.key==='Enter')tryLogin()};
+try{if(sessionStorage.getItem('ok')==='1')show()}catch(x){}
+const SAMPLE=`01-Apr-25	By	Opening Balance			20450
+14-May-25	To	AXIS BANK	Payment	5	20450
+12-Apr-25	By	Energy Consultation Charges	Purchase	2		6405
+12-May-25	By	Energy Consultation Charges	Purchase	3		5443
+19-Jun-25	To	AXIS BANK	Payment	18	11848
+12-Jun-25	By	Energy Consultation Charges	Purchase	5		5468
+15-Jul-25	By	Energy Consultation Charges	Purchase	6		5675
+04-Sep-25	To	AXIS BANK	Payment	34	11143
+15-Aug-25	By	South Himalaya Green Energy Consultants	Journal	23		6017
+03-Oct-25	To	AXIS BANK	Payment	42	6017
+13-Sep-25	By	South Himalaya Green Energy Consultants	Journal	41		5975
+13-Oct-25	By	South Himalaya Green Energy Consultants	Journal	42		5964
+14-Nov-25	By	South Himalaya Green Energy Consultants	Journal	51		5390
+10-Dec-25	By	South Himalaya Green Energy Consultants	Journal	52		3674
+29-Jan-26	To	AXIS BANK	Payment	62	21878
+04-Jan-26	By	Aravind S & Associates	Journal	111		5734
+13-Jan-26	By	South Himalaya Green Energy Consultants	Journal	76		5199
+12-Feb-26	By	South Himalaya Green Energy Consultants	Journal	78		4979
+12-Mar-26	By	South Himalaya Green Energy Consultants	Journal	91		4508`;
+const $=id=>document.getElementById(id),M={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+const fmt=n=>n.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+const num=v=>{if(typeof v==='number')return v;const x=parseFloat(String(v||'').replace(/[,\s₹]/g,''));return isNaN(x)?0:x};
+function pd(v){if(v instanceof Date)return new Date(v.getTime()+12*36e5);
+ const m=String(v||'').trim().match(/^(\d{1,2})[-\/ ]([A-Za-z]{3})[a-z]*[-\/ ](\d{2,4})$/);
+ if(m){let y=+m[3];if(y<100)y+=2000;return new Date(y,M[m[2].toLowerCase()],+m[1])}
+ const n=String(v||'').trim().match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})$/);
+ if(n){let y=+n[3];if(y<100)y+=2000;return new Date(y,+n[2]-1,+n[1])}return null}
+const ds=d=>d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'}).replace(/ /g,'-');
+function parse(rows){ // rows: arrays of cells
+ const tx=[];let hdr=null;
+ for(const r of rows){const c=r.map(x=>x==null?'':x);
+  const low=c.map(x=>String(x).trim().toLowerCase());
+  if(low.includes('debit')&&low.includes('credit')){hdr={dr:low.indexOf('debit'),cr:low.indexOf('credit'),vt:low.indexOf('vch type'),vn:low.indexOf('vch no.'),p:low.indexOf('particulars')};continue}
+  const d=pd(c[0]);if(!d)continue;
+  let dr,cr,part,vt='',vn='';
+  if(hdr){dr=num(c[hdr.dr]);cr=num(c[hdr.cr]);part=[c[1],c[hdr.p+1]].filter((x,i)=>i&&x).join('')||c[hdr.p]||'';vt=c[hdr.vt]||'';vn=c[hdr.vn]||''}
+  else{ // positional (Date, By/To, Particulars, Type, No, Debit, Credit) – tolerate missing blanks by To/By
+   const to=/^to$/i.test(String(c[1]).trim());part=c[2]||'';vt=c[3]||'';vn=c[4]||'';
+   const nums=c.slice(5).filter(x=>String(x).trim()!=='').map(num);
+   if(!nums.length&&c.length>=7){dr=num(c[5]);cr=num(c[6])}else{const a=nums[0]||0;dr=to?a:0;cr=to?0:a}}
+  if(!dr&&!cr)continue;
+  if(/^(by|to)$/i.test(String(part).trim()))part='';
+  tx.push({d,part:String(part).trim(),vt:String(vt),vn:String(vn),dr,cr})}
+ return tx}
+function run(rows){
+ const tx=parse(rows),msg=$('msg');msg.textContent='';
+ if(!tx.length){msg.textContent='No dated transaction rows found. Check the file format.';$('out').innerHTML='';return}
+ const sd=tx.reduce((a,t)=>a+t.dr,0),sc=tx.reduce((a,t)=>a+t.cr,0);
+ let dir=$('dir').value;if(dir==='auto')dir=sc>=sd?'cr':'dr';
+ const bills=tx.filter(t=>(dir==='cr'?t.cr:t.dr)>0).map(t=>({...t,amt:dir==='cr'?t.cr:t.dr}));
+ const pays=tx.filter(t=>(dir==='cr'?t.dr:t.cr)>0).map(t=>({...t,amt:dir==='cr'?t.dr:t.cr}));
+ // opening balance first, then by date
+ bills.sort((a,b)=>(/opening/i.test(b.part)-/opening/i.test(a.part))||a.d-b.d);
+ let pool=pays.reduce((a,p)=>a+p.amt,0);const total=pool;
+ bills.forEach(b=>{const u=Math.min(b.amt,pool);b.paid=u;b.pend=+(b.amt-u).toFixed(2);pool=+(pool-u).toFixed(2);b.st=b.pend===0?'Paid':b.paid>0?'Partly':'Pending'});
+ const pend=bills.reduce((a,b)=>a+b.pend,0),bt=bills.reduce((a,b)=>a+b.amt,0);
+ const adv=pool>0?pool:0;
+ window._b=bills;
+ $('out').innerHTML=`<div class="card"><div class="g">
+ <div class="k"><span>Total ${dir==='cr'?'credits (bills)':'debits (bills)'}</span><b>${fmt(bt)}</b></div>
+ <div class="k"><span>Total ${dir==='cr'?'debits (payments)':'credits (receipts)'}</span><b>${fmt(total)}</b></div>
+ <div class="k"><span>Pending balance</span><b style="color:var(--bad)">${fmt(pend)}</b></div>
+ <div class="k"><span>Pending bills</span><b>${bills.filter(b=>b.pend>0).length} of ${bills.length}</b></div>
+ ${adv?`<div class="k"><span>Excess paid (advance)</span><b>${fmt(adv)}</b></div>`:''}</div>
+ <div class="row"><label><input type="checkbox" id="po" checked> Show pending only</label><button class="p" id="dx">Download Excel</button><button id="dl">Download CSV</button><span id="dm" style="color:var(--mu);font-size:13px"></span></div></div>
+ <div class="card sc"><table><thead><tr><th>Date</th><th>Particulars</th><th>Vch</th><th class="n">Amount</th><th class="n">Settled</th><th class="n">Pending</th><th>Status</th></tr></thead><tbody id="tb"></tbody></table></div>`;
+ const draw=()=>{const po=$('po').checked;$('tb').innerHTML=bills.filter(b=>!po||b.pend>0).map(b=>`<tr><td>${ds(b.d)}</td><td>${esc(b.part)}</td><td>${esc((b.vt+' '+b.vn).trim())}</td><td class="n">${fmt(b.amt)}</td><td class="n">${fmt(b.paid)}</td><td class="n"><b>${fmt(b.pend)}</b></td><td><span class="t ${b.st}">${b.st}</span></td></tr>`).join('')||'<tr><td colspan="7">Nothing pending 🎉</td></tr>'};
+ draw();$('po').onchange=draw;
+ const save=async(name,data)=>{const dm=$('dm');try{const d=await claude.use('downloads');if(!d){dm.textContent='Download is not available in this view.';return}
+  await d.save({filename:name,data});dm.textContent='Saved.'}catch(e){dm.textContent=e&&e.code==='declined'?'':'Download failed.'}};
+ const rowsOf=l=>l.map(b=>[ds(b.d),b.part,(b.vt+' '+b.vn).trim(),b.amt,b.paid,b.pend,b.st]);
+ const H=['Date','Particulars','Vch','Amount','Settled','Pending','Status'];
+ $('dx').onclick=()=>{const pl=bills.filter(b=>b.pend>0);
+  const a=[H,...rowsOf(pl),['','TOTAL PENDING','',pl.reduce((x,b)=>x+b.amt,0),pl.reduce((x,b)=>x+b.paid,0),pend,'']];
+  const wb=XLSX.utils.book_new();
+  const w1=XLSX.utils.aoa_to_sheet(a),w2=XLSX.utils.aoa_to_sheet([H,...rowsOf(bills)]);
+  [w1,w2].forEach(w=>w['!cols']=[{wch:11},{wch:42},{wch:16},{wch:12},{wch:12},{wch:12},{wch:10}]);
+  XLSX.utils.book_append_sheet(wb,w1,'Pending');XLSX.utils.book_append_sheet(wb,w2,'All bills');
+  save('pending-ledger.xlsx',XLSX.write(wb,{bookType:'xlsx',type:'array'}))};
+ $('dl').onclick=()=>{const l=[H.join(','),...rowsOf(bills.filter(b=>b.pend>0)).map(r=>r.map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(','))];save('pending-ledger.csv',l.join('\n'))}}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function text(t){return t.split(/\r?\n/).filter(l=>l.trim()).map(l=>l.includes('\t')?l.split('\t'):l.split(','))}
+function file(f){if(!f)return;const r=new FileReader();r.onload=e=>{try{
+ const wb=XLSX.read(e.target.result,{type:'array',cellDates:true});
+ run(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true,defval:''}))}catch(x){$('msg').textContent='Could not read file.'}};r.readAsArrayBuffer(f)}
+$('drop').onclick=()=>$('f').click();$('f').onchange=e=>file(e.target.files[0]);
+$('drop').ondragover=e=>{e.preventDefault();$('drop').classList.add('on')};
+$('drop').ondragleave=()=>$('drop').classList.remove('on');
+$('drop').ondrop=e=>{e.preventDefault();$('drop').classList.remove('on');file(e.dataTransfer.files[0])};
+$('go').onclick=()=>run(text($('ta').value));
+$('sm').onclick=()=>{$('ta').value=SAMPLE;run(text(SAMPLE))};
+</script></div></main></body></html>
