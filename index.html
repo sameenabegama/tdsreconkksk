@@ -117,8 +117,11 @@ function run(rows){
  <div class="card sc"><table><thead><tr><th>Date</th><th>Particulars</th><th>Vch</th><th class="n">Amount</th><th class="n">Settled</th><th class="n">Pending</th><th>Status</th></tr></thead><tbody id="tb"></tbody></table></div>`;
  const draw=()=>{const po=$('po').checked;$('tb').innerHTML=bills.filter(b=>!po||b.pend>0).map(b=>`<tr><td>${ds(b.d)}</td><td>${esc(b.part)}</td><td>${esc((b.vt+' '+b.vn).trim())}</td><td class="n">${fmt(b.amt)}</td><td class="n">${fmt(b.paid)}</td><td class="n"><b>${fmt(b.pend)}</b></td><td><span class="t ${b.st}">${b.st}</span></td></tr>`).join('')||'<tr><td colspan="7">Nothing pending 🎉</td></tr>'};
  draw();$('po').onchange=draw;
- const save=async(name,data)=>{const dm=$('dm');try{const d=await claude.use('downloads');if(!d){dm.textContent='Download is not available in this view.';return}
-  await d.save({filename:name,data});dm.textContent='Saved.'}catch(e){dm.textContent=e&&e.code==='declined'?'':'Download failed.'}};
+ const save=async(name,data)=>{const dm=$('dm');dm.textContent='';
+  try{let d=null;if(typeof claude!=='undefined'&&claude.use){try{d=await claude.use('downloads')}catch(x){d=null}}
+   if(d){await d.save({filename:name,data:new Blob([data])});dm.textContent='Saved.';return}
+   const u=URL.createObjectURL(new Blob([data]));const a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000);dm.textContent='Downloaded.'}
+  catch(e){dm.textContent=e&&e.code==='declined'?'':'Download failed ('+((e&&(e.code||e.message))||'error')+').'}};
  const rowsOf=l=>l.map(b=>[ds(b.d),b.part,(b.vt+' '+b.vn).trim(),b.amt,b.paid,b.pend,b.st]);
  const H=['Date','Particulars','Vch','Amount','Settled','Pending','Status'];
  $('dx').onclick=()=>{const pl=bills.filter(b=>b.pend>0);
