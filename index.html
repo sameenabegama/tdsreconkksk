@@ -97,7 +97,9 @@ function run(rows){
  const tx=parse(rows),msg=$('msg');msg.textContent='';
  if(!tx.length){msg.textContent='No dated transaction rows found. Check the file format.';$('out').innerHTML='';return}
  const sd=tx.reduce((a,t)=>a+t.dr,0),sc=tx.reduce((a,t)=>a+t.cr,0);
- let dir=$('dir').value;if(dir==='auto')dir=sc>=sd?'cr':'dr';
+ let dir=$('dir').value;
+ if(dir==='auto'){const st=t=>/payment|receipt|bank/i.test(t.vt+' '+t.part),nd=tx.filter(t=>t.dr&&st(t)).length,nc=tx.filter(t=>t.cr&&st(t)).length;
+  dir=nd!==nc?(nd>nc?'cr':'dr'):(sc>=sd?'cr':'dr')}
  const bills=tx.filter(t=>(dir==='cr'?t.cr:t.dr)>0).map(t=>({...t,amt:dir==='cr'?t.cr:t.dr}));
  const pays=tx.filter(t=>(dir==='cr'?t.dr:t.cr)>0).map(t=>({...t,amt:dir==='cr'?t.dr:t.cr}));
  // opening balance first, then by date
@@ -112,10 +114,10 @@ function run(rows){
  <div class="k"><span>Total ${dir==='cr'?'debits (payments)':'credits (receipts)'}</span><b>${fmt(total)}</b></div>
  <div class="k"><span>Pending balance</span><b style="color:var(--bad)">${fmt(pend)}</b></div>
  <div class="k"><span>Pending bills</span><b>${bills.filter(b=>b.pend>0).length} of ${bills.length}</b></div>
- ${adv?`<div class="k"><span>Excess paid (advance)</span><b>${fmt(adv)}</b></div>`:''}</div>
+ ${adv?`<div class="k" style="outline:2px solid var(--ok)"><span>Excess payment (advance)</span><b style="color:var(--ok)">${fmt(adv)}</b></div>`:''}</div>
  <div class="row"><label><input type="checkbox" id="po" checked> Show pending only</label><button class="p" id="dx">Download Excel</button><button id="dl">Download CSV</button><span id="dm" style="color:var(--mu);font-size:13px"></span></div></div>
  <div class="card sc"><table><thead><tr><th>Date</th><th>Particulars</th><th>Vch</th><th class="n">Amount</th><th class="n">Settled</th><th class="n">Pending</th><th>Status</th></tr></thead><tbody id="tb"></tbody></table></div>`;
- const draw=()=>{const po=$('po').checked;$('tb').innerHTML=bills.filter(b=>!po||b.pend>0).map(b=>`<tr><td>${ds(b.d)}</td><td>${esc(b.part)}</td><td>${esc((b.vt+' '+b.vn).trim())}</td><td class="n">${fmt(b.amt)}</td><td class="n">${fmt(b.paid)}</td><td class="n"><b>${fmt(b.pend)}</b></td><td><span class="t ${b.st}">${b.st}</span></td></tr>`).join('')||'<tr><td colspan="7">Nothing pending 🎉</td></tr>'};
+ const draw=()=>{const po=$('po').checked;$('tb').innerHTML=(bills.filter(b=>!po||b.pend>0).map(b=>`<tr><td>${ds(b.d)}</td><td>${esc(b.part)}</td><td>${esc((b.vt+' '+b.vn).trim())}</td><td class="n">${fmt(b.amt)}</td><td class="n">${fmt(b.paid)}</td><td class="n"><b>${fmt(b.pend)}</b></td><td><span class="t ${b.st}">${b.st}</span></td></tr>`).join('')||'<tr><td colspan="7">Nothing pending 🎉</td></tr>')+(adv?`<tr><td colspan="3"><b>Excess payment (paid more than billed)</b></td><td class="n"></td><td class="n"><b>${fmt(adv)}</b></td><td class="n"></td><td><span class="t Paid">Advance</span></td></tr>`:'')};
  draw();$('po').onchange=draw;
  const save=async(name,data)=>{const dm=$('dm');dm.textContent='';
   try{let d=null;if(typeof claude!=='undefined'&&claude.use){try{d=await claude.use('downloads')}catch(x){d=null}}
@@ -125,7 +127,7 @@ function run(rows){
  const rowsOf=l=>l.map(b=>[ds(b.d),b.part,(b.vt+' '+b.vn).trim(),b.amt,b.paid,b.pend,b.st]);
  const H=['Date','Particulars','Vch','Amount','Settled','Pending','Status'];
  $('dx').onclick=()=>{const pl=bills.filter(b=>b.pend>0);
-  const a=[H,...rowsOf(pl),['','TOTAL PENDING','',pl.reduce((x,b)=>x+b.amt,0),pl.reduce((x,b)=>x+b.paid,0),pend,'']];
+  const a=[H,...rowsOf(pl),['','TOTAL PENDING','',pl.reduce((x,b)=>x+b.amt,0),pl.reduce((x,b)=>x+b.paid,0),pend,''],...(adv?[['','EXCESS PAYMENT (ADVANCE)','','','',adv,'']]:[])];
   const wb=XLSX.utils.book_new();
   const w1=XLSX.utils.aoa_to_sheet(a),w2=XLSX.utils.aoa_to_sheet([H,...rowsOf(bills)]);
   [w1,w2].forEach(w=>w['!cols']=[{wch:11},{wch:42},{wch:16},{wch:12},{wch:12},{wch:12},{wch:10}]);
